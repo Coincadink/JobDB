@@ -2,7 +2,7 @@ This project is designed to serve as a tool which when run will fetch all jobs f
 
 I recommend you run the project using uv to create a venv:
 
-```console
+```Python console
 uv venv --python 3.13
 uv pip install -r requirements.txt
 uv run src/main.py
