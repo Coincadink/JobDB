@@ -112,4 +112,18 @@ class ASMLScraper(Scraper):
     
     def parse_job(self, job):
         """Parse job data from the API response"""
-        return job["name"]
+        parsed = {
+            'company': self.company_name,
+            'job_id': job["job_id"],
+            'title': job["name"],
+            'department':job["job_teams"],
+            'location': job["job_location"],
+            'degree': job["job_degrees"],
+            'experience_level': job["job_experience_levels"],
+            'description': job["description"],
+            'post_date': job["job_date_posted"],
+            'scraped_date': datetime.now(),
+            'url': job["url"]
+        }
+
+        return parsed

@@ -23,16 +23,16 @@ def run_scraper(scraper, db_manager):
         job_ids = [job["job_id"] for job in jobs]
 
         # Add or update jobs in the database
-        new_jobs, updated_jobs = db_manager.add_or_update_jobs(jobs)
+        # new_jobs, updated_jobs = db_manager.add_or_update_jobs(jobs)
 
         # Mark jobs as inactive if they're no longer listed
-        inactive_jobs = db_manager.mark_inactive_jobs(scraper.company_name, job_ids)
+        # inactive_jobs = db_manager.mark_inactive_jobs(scraper.company_name, job_ids)
 
-        logger.info(f"Added {len(new_jobs)} new jobs")
-        logger.info(f"Updated {len(updated_jobs)} existing jobs")
-        logger.info(f"Marked {len(inactive_jobs)} jobs as inactive")
+        logger.info(f"Added {len(jobs)} new jobs")
+        # logger.info(f"Updated {len(updated_jobs)} existing jobs")
+        # logger.info(f"Marked {len(inactive_jobs)} jobs as inactive")
 
-        return new_jobs
+        return jobs
 
     except Exception as e:
         logger.error(f"Error scraping {scraper.company_name}: {str(e)}", exc_info=True)
@@ -87,7 +87,11 @@ def main():
     all_new_jobs = []
     for scraper in scrapers_to_run:
         new_jobs = run_scraper(scraper, db_manager)
-        # all_new_jobs.extend(new_jobs)
+        all_new_jobs.extend(new_jobs)
+
+    with open("out.txt", "w") as f:
+        for job in all_new_jobs:
+            f.write(f"{job}\n")
 
     logger.info(f"Scraping completed. Found {len(all_new_jobs)} new jobs.")
 
