@@ -1,0 +1,19 @@
+2025-04-03 00:57:13,810 - Scraper-ASML - INFO - Starting scraping for ASML
+2025-04-03 00:57:13,811 - ASMLScraper - INFO - Starting ASML job scraping
+2025-04-03 00:57:13,811 - ASMLScraper - INFO - Fetching ASML jobs with offset 0
+2025-04-03 00:57:15,088 - ASMLScraper - INFO - Response status: 200
+2025-04-03 00:57:15,094 - ASMLScraper - INFO - Fetching ASML jobs with offset 100
+2025-04-03 00:57:16,229 - ASMLScraper - INFO - Response status: 200
+2025-04-03 00:57:16,234 - ASMLScraper - INFO - Fetching ASML jobs with offset 200
+2025-04-03 00:57:17,383 - ASMLScraper - INFO - Response status: 200
+2025-04-03 00:57:17,389 - ASMLScraper - INFO - Fetching ASML jobs with offset 300
+2025-04-03 00:57:18,767 - ASMLScraper - INFO - Response status: 200
+2025-04-03 00:57:18,772 - ASMLScraper - INFO - Found 385 ASML jobs
+2025-04-03 00:57:18,772 - Scraper-ASML - INFO - Found 385 jobs for ASML
+2025-04-03 00:57:18,773 - Scraper-ASML - ERROR - Error scraping ASML: string indices must be integers, not 'str'
+Traceback (most recent call last):
+  File "/Users/u1358467/dev/JobDB/main.py", line 23, in run_scraper
+    job_ids = [job["job_id"] for job in jobs]
+               ~~~^^^^^^^^^^
+TypeError: string indices must be integers, not 'str'
+2025-04-03 00:57:18,774 - JobScraper - INFO - Scraping completed. Found 0 new jobs.
