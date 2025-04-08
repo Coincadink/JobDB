@@ -1,129 +1,259 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean
+import os
+from datetime import datetime
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, Text, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime
+from typing import List, Dict, Tuple, Any, Optional
 
 Base = declarative_base()
 
 class JobListing(Base):
+    """SQLAlchemy model for job listings"""
     __tablename__ = 'job_listings'
-        
-    id = Column(Integer, primary_key=True)
-    company = Column(String(100), nullable=False, index=True)
-    job_id = Column(String(100), nullable=False, index=True)
-    title = Column(String(200), nullable=False)
-    department = Column(String(100))
-    location = Column(String(200))
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(255), unique=True, nullable=False, index=True)
+    company = Column(String(255), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    department = Column(Text)
+    location = Column(Text)
     degree = Column(Text)
-    experience_level = Column(String(50))
+    experience_level = Column(Text)
     description = Column(Text)
     post_date = Column(DateTime)
-    first_scraped_date = Column(DateTime)
-    last_scraped_date = Column(DateTime)
+    scraped_date = Column(DateTime, default=datetime.now)
     url = Column(String(512))
-    is_active = Column(Boolean, default=True)
+    last_updated = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
     def __repr__(self):
-        return f"<JobListing(company='{self.company}', title='{self.title}', location='{self.location}')>"
+        return f"<JobListing(id={self.id}, job_id={self.job_id}, company={self.company}, title={self.title})>"
+
 
 class DatabaseManager:
-    def __init__(self, db_path='sqlite:///database/job_listings.db'):
-        self.engine = create_engine(db_path)
-        Base.metadata.create_all(self.engine)
-        self.Session = sessionmaker(bind=self.engine)
+    """Manages job listings in a SQLite database"""
     
-    def add_or_update_jobs(self, jobs_data):
-        """Add new jobs or update existing ones in the database"""
-        session = self.Session()
-        new_jobs = []
-        updated_jobs = []
+    def __init__(self, db_path: str = "jobs.db"):
+        """
+        Initialize the database manager
         
-        try:
-            for job_data in jobs_data:
-                # Check if job already exists
-                existing_job = session.query(JobListing).filter_by(
-                    company=job_data['company'],
-                    job_id=job_data['job_id']
-                ).first()
-                
-                if existing_job:
-                    # Update existing job
-                    existing_job.job_id = job_data['job_id']
-                    existing_job.title = job_data['title']
-                    existing_job.department = job_data['department']
-                    existing_job.location = job_data['location']
-                    existing_job.degree = job_data['degree']
-                    existing_job.experience_level = job_data['experience_level']
-                    existing_job.description = job_data['description']
-                    existing_job.last_scraped_date = datetime.now()
-                    existing_job.url = job_data['url']
-                    existing_job.is_active = True
-                    updated_jobs.append(existing_job)
-                else:
-                    # Create new job
-                    new_job = JobListing(
-                        company=job_data['company'],
-                        job_id=job_data['job_id'],
-                        title=job_data['title'],
-                        department=job_data['department'],
-                        location=job_data['location'],
-                        degree=job_data['degree'],
-                        experience_level=job_data['experience_level'],
-                        description=job_data['description'],
-                        post_date=datetime.fromisoformat(job_data['post_date']),
-                        first_scraped_date=datetime.now(),
-                        last_scraped_date=datetime.now(),
-                        url=job_data['url'],
-                        is_active=True
-                    )
-                    
-                    session.add(new_job)
-                    new_jobs.append(new_job)
+        Args:
+            db_path: Path to the SQLite database file
+        """
+        self.db_path = db_path
+        self.engine = create_engine(f"sqlite:///{db_path}")
+        self.Session = sessionmaker(bind=self.engine)
+        
+        # Create tables if they don't exist
+        Base.metadata.create_all(self.engine)
+    
+    def _job_exists(self, session, job_id: str) -> bool:
+        """Check if a job with the given job_id exists in the database"""
+        return session.query(JobListing).filter_by(job_id=job_id).first() is not None
+    
+    def _convert_job_data(self, job_data: Dict) -> Dict:
+        """Convert job data to appropriate types for database storage"""
+        job_dict = job_data.copy()
+        
+        # Convert post_date to datetime if it's a string
+        if isinstance(job_dict.get('post_date'), str):
+            try:
+                job_dict['post_date'] = datetime.fromisoformat(job_dict['post_date'])
+            except (ValueError, TypeError):
+                # Fallback if date format is unknown
+                job_dict['post_date'] = datetime.now()
+        
+        # Convert list fields to string representation
+        for field in ['department', 'location', 'degree', 'experience_level']:
+            if isinstance(job_dict.get(field), list):
+                job_dict[field] = ', '.join(str(item) for item in job_dict[field])
+        
+        return job_dict
+    
+    def add_job(self, job_data: Dict) -> JobListing:
+        """
+        Add a single job to the database
+        
+        Args:
+            job_data: Dictionary containing job information
             
+        Returns:
+            The created JobListing object
+        """
+        session = self.Session()
+        try:
+            job_dict = self._convert_job_data(job_data)
+            job = JobListing(**job_dict)
+            session.add(job)
             session.commit()
-            return new_jobs, updated_jobs
-        
+            return job
         except Exception as e:
             session.rollback()
             raise e
-        
         finally:
             session.close()
     
-    def mark_inactive_jobs(self, company, active_job_ids):
-        """Mark jobs as inactive if they are no longer listed"""
-        session = self.Session()
+    def update_job(self, job_id: str, job_data: Dict) -> JobListing:
+        """
+        Update an existing job in the database
         
+        Args:
+            job_id: The job_id of the job to update
+            job_data: Updated job information
+            
+        Returns:
+            The updated JobListing object
+        """
+        session = self.Session()
         try:
-            # Find all active jobs for this company that are not in the active_job_ids list
-            inactive_jobs = session.query(JobListing).filter(
-                JobListing.company == company,
-                JobListing.is_active == True,
-                ~JobListing.job_id.in_(active_job_ids)
-            ).all()
+            job = session.query(JobListing).filter_by(job_id=job_id).first()
+            if not job:
+                raise ValueError(f"Job with job_id {job_id} not found")
             
-            for job in inactive_jobs:
-                job.is_active = False
-                
+            job_dict = self._convert_job_data(job_data)
+            
+            # Update fields
+            for key, value in job_dict.items():
+                if hasattr(job, key):
+                    setattr(job, key, value)
+            
+            job.last_updated = datetime.now()
             session.commit()
-            return inactive_jobs
-            
+            return job
+        except Exception as e:
+            session.rollback()
+            raise e
         finally:
             session.close()
     
-    def get_jobs_by_criteria(self, company=None, is_active=None, days=None):
-        """Get jobs filtered by criteria"""
+    def add_or_update_jobs(self, jobs_data: List[Dict]) -> Tuple[List[str], List[str]]:
+        """
+        Add new jobs or update existing ones in the database
+        
+        Args:
+            jobs_data: List of dictionaries containing job information
+            
+        Returns:
+            Tuple containing (list of new job_ids added, list of existing job_ids updated)
+        """
+        new_jobs = []
+        existing_jobs = []
+        
         session = self.Session()
-        query = session.query(JobListing)
+        try:
+            for job_data in jobs_data:
+                job_id = job_data.get('job_id')
+                if not job_id:
+                    continue
+                
+                job_dict = self._convert_job_data(job_data)
+                
+                # Check if job exists
+                existing_job = session.query(JobListing).filter_by(job_id=job_id).first()
+                
+                if existing_job:
+                    # Update existing job
+                    for key, value in job_dict.items():
+                        if hasattr(existing_job, key):
+                            setattr(existing_job, key, value)
+                    existing_job.last_updated = datetime.now()
+                    existing_jobs.append(job_id)
+                else:
+                    # Add new job
+                    new_job = JobListing(**job_dict)
+                    session.add(new_job)
+                    new_jobs.append(job_id)
+            
+            session.commit()
+            return new_jobs, existing_jobs
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+    
+    def get_job_by_id(self, job_id: str) -> Optional[Dict]:
+        """
+        Retrieve a job by its job_id
         
-        if company:
-            query = query.filter(JobListing.company == company)
+        Args:
+            job_id: The job_id to look up
+            
+        Returns:
+            Dictionary with job data or None if not found
+        """
+        session = self.Session()
+        try:
+            job = session.query(JobListing).filter_by(job_id=job_id).first()
+            if not job:
+                return None
+            
+            # Convert SQLAlchemy model to dictionary
+            return {c.key: getattr(job, c.key) 
+                   for c in inspect(job).mapper.column_attrs}
+        finally:
+            session.close()
+    
+    def search_jobs(self, 
+                   company=None, 
+                   title=None, 
+                   location=None, 
+                   posted_after=None,
+                   limit=100) -> List[Dict]:
+        """
+        Search for jobs based on criteria
         
-        if is_active is not None:
-            query = query.filter(JobListing.is_active == is_active)
+        Args:
+            company: Filter by company name (partial match)
+            title: Filter by job title (partial match)
+            location: Filter by job location (partial match)
+            posted_after: Filter jobs posted after this datetime
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of job dictionaries matching criteria
+        """
+        session = self.Session()
+        try:
+            query = session.query(JobListing)
+            
+            if company:
+                query = query.filter(JobListing.company.like(f"%{company}%"))
+            if title:
+                query = query.filter(JobListing.title.like(f"%{title}%"))
+            if location:
+                query = query.filter(JobListing.location.like(f"%{location}%"))
+            if posted_after:
+                query = query.filter(JobListing.post_date >= posted_after)
+            
+            jobs = query.order_by(JobListing.post_date.desc()).limit(limit).all()
+            
+            return [{c.key: getattr(job, c.key) 
+                    for c in inspect(job).mapper.column_attrs}
+                   for job in jobs]
+        finally:
+            session.close()
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about the job database
         
-        if days:
-            cutoff_date = datetime.now() - timedelta(days=days)
-            query = query.filter(JobListing.first_scraped_date >= cutoff_date)
-        
-        return query.all()
+        Returns:
+            Dictionary with statistics
+        """
+        session = self.Session()
+        try:
+            total_jobs = session.query(JobListing).count()
+            companies = session.query(JobListing.company, 
+                                     func.count(JobListing.id)
+                                    ).group_by(JobListing.company).all()
+            
+            newest_job = session.query(JobListing).order_by(
+                JobListing.post_date.desc()).first()
+            
+            return {
+                "total_jobs": total_jobs,
+                "companies": {company: count for company, count in companies},
+                "newest_job_date": newest_job.post_date if newest_job else None
+            }
+        finally:
+            session.close()
